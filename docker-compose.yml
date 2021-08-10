@@ -1,0 +1,105 @@
+version: '3.3'
+
+volumes:
+  nexus-data: {} 
+  jenkins-data: {} 
+  sonar-data: {} 
+  postgres-data: {} 
+  # nexus-iq-data: {}
+  # nexus-iq-data-config: {}
+
+networks:
+  devnet:
+    driver: bridge
+
+services:
+  jenkins:
+    build: 
+      context: ./master #jenkins/jenkins:lts-jdk11
+    container_name: jenkins
+    restart: always
+    ports:
+      - "8080:8080"
+      - "50000:50000"
+    environment:
+      - CASC_JENKINS_CONFIG=/var/jenkins_conf/jenkins.yaml
+    networks:
+      - devnet
+    volumes:
+      - "jenkins-data:/var/jenkins_home"
+      - ./casc_configs:/var/jenkins_conf
+    secrets:
+      - github #Github username with password as an example. Purpose here is to have a user with write-access for special cases. Like the git-publisher.
+      - adminpw #Initial adminstrator user password. Added for debugging purposes. Should be removed prior to go-live. 
+      # - agent_private_key #ssh private key for connecting ssh slaves
+
+  sonarqube:
+    image: sonarqube:lts
+    container_name: sonarqube
+    restart: always
+    ports:
+      - "9000:9000"
+    environment:
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - SONARQUBE_JDBC_URL=jdbc:postgresql://sonardb:5432/sonar
+      - SONARQUBE_JDBC_USERNAME=sonar
+      - SONARQUBE_JDBC_PASSWORD=sonar
+    networks:
+      - devnet
+    volumes:
+      - "sonar-data/:/var/lib/sonar"
+
+  sonardb:
+    image: postgres:9.6.1
+    container_name: postgres
+    restart: always
+    environment:
+      - POSTGRES_USER=sonar
+      - POSTGRES_PASSWORD=sonar
+      - POSTGRESQL_DB=sonar
+    ports:
+      - "5432:5432"
+    networks:
+      - devnet
+    volumes:
+      - "postgres-data:/var/lib/postgresql"
+
+  nexus:
+    image: sonatype/nexus3:latest
+    container_name: nexus
+    restart: always
+    environment:
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "8081:8081"
+    networks:
+      - devnet
+    volumes:
+      - "nexus-data:/nexus-data"
+
+  # nexus-iq-server:
+  #   image: sonatype/nexus-iq-server:latest
+  #   container_name: nexus-iq-server
+  #   restart: always
+  #   environment:
+  #     - bootstrap.memory_lock=true
+  #     - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+  #   stdin_open: true
+  #   tty: true
+  #   ports:
+  #     - 8070:8070/tcp
+  #   networks:
+  #     - devnet
+  #   volumes:
+  #     - "nexus-iq-data:/sonatype-work"
+  #     - "nexus-iq-data-config:/opt/sonatype/iq-server"
+
+secrets: #Be careful with newlines in your secrets, make sure to remove them before running docker-compose up.
+  github:
+    file: ./secrets/github
+  adminpw:
+    file: ./secrets/adminpw
+#   agent_private_key: #This should point to the private key you want your jenkins master to use when connecting to slaves. So in AWS for example this would be your .pem file
+#     file: ~/.ssh/id_rsa
